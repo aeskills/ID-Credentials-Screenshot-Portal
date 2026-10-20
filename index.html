@@ -8,7 +8,6 @@
 
   <!-- CDN Libraries (Pinned Versions) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
   <style>
@@ -844,125 +843,6 @@
       margin-top: 10px;
     }
 
-    /* OFF-SCREEN RENDER STAGE FOR HTML2CANVAS */
-    #render-stage {
-      position: absolute;
-      left: -9999px;
-      top: -9999px;
-      width: 860px;
-      pointer-events: none;
-    }
-
-    .render-card {
-      width: 860px;
-      background: #ffffff !important;
-      color: #0f172a !important;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
-      padding: 28px 32px !important;
-      box-sizing: border-box !important;
-      border: 2px solid #e2e8f0;
-      border-radius: 12px;
-    }
-
-    .rc-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      padding-bottom: 18px;
-      border-bottom: 2px solid #e2e8f0;
-      margin-bottom: 18px;
-    }
-
-    .rc-title-block h2 {
-      font-size: 24px !important;
-      font-weight: 800 !important;
-      color: #1e1b4b !important;
-      margin-bottom: 4px;
-      line-height: 1.2;
-    }
-
-    .rc-subtitle {
-      font-size: 13px !important;
-      color: #475569 !important;
-      font-weight: 500 !important;
-    }
-
-    .rc-badge-group {
-      text-align: right;
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      gap: 6px;
-    }
-
-    .rc-part-badge {
-      background: #4f46e5 !important;
-      color: #ffffff !important;
-      font-size: 13px !important;
-      font-weight: 700 !important;
-      padding: 4px 12px !important;
-      border-radius: 999px !important;
-      display: inline-block !important;
-    }
-
-    .rc-date-badge {
-      font-size: 12px !important;
-      color: #64748b !important;
-      font-weight: 600 !important;
-    }
-
-    .rc-table {
-      width: 100% !important;
-      border-collapse: collapse !important;
-      margin-bottom: 18px !important;
-      font-size: 13.5px !important;
-    }
-
-    .rc-table th {
-      background: #f1f5f9 !important;
-      color: #1e293b !important;
-      font-weight: 700 !important;
-      padding: 10px 14px !important;
-      border-top: 1px solid #cbd5e1 !important;
-      border-bottom: 2px solid #94a3b8 !important;
-      text-align: left !important;
-    }
-
-    .rc-table th.rc-sno-col,
-    .rc-table td.rc-sno-col {
-      width: 75px !important;
-      text-align: center !important;
-    }
-
-    .rc-table td {
-      padding: 9px 14px !important;
-      border-bottom: 1px solid #e2e8f0 !important;
-      color: #0f172a !important;
-      vertical-align: middle !important;
-    }
-
-    .rc-table tr:nth-child(even) td {
-      background-color: #f8fafc !important;
-    }
-
-    .rc-mono {
-      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace !important;
-      font-size: 13.5px !important;
-      font-weight: 600 !important;
-      letter-spacing: 0.03em !important;
-      color: #0f172a !important;
-    }
-
-    .rc-footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding-top: 14px;
-      border-top: 1px solid #e2e8f0;
-      font-size: 11.5px !important;
-      color: #64748b !important;
-    }
-
     .privacy-footer {
       margin-top: 40px;
       text-align: center;
@@ -1284,9 +1164,6 @@
     </div>
   </div>
 
-  <!-- Off-Screen Render Stage for html2canvas -->
-  <div id="render-stage" aria-hidden="true"></div>
-
   <!-- Full-Size Image Preview Modal -->
   <div id="imageModal" class="modal-overlay">
     <div class="modal-content">
@@ -1306,7 +1183,7 @@
         trainers: [], // [ { name, capacity } ]
         ids: [], // [ { id, password } ]
         allocatedRows: [], // [ { id, password, trainer: string | '' } ]
-        trainerBatches: new Map(), // trainerName -> [ { part, totalParts, rows, dataUrl, filename } ]
+        trainerBatches: new Map(), // trainerName -> [ { part, totalParts, blob, url, filename } ]
         currentTableFilter: 'ALL',
         currentPreviewFilter: 'ALL',
         trainersFileName: '',
@@ -1363,7 +1240,6 @@
       const errorMessage = document.getElementById('errorMessage');
       const resetAllBtn = document.getElementById('resetAllBtn');
 
-      const renderStage = document.getElementById('render-stage');
       const imageModal = document.getElementById('imageModal');
       const modalCloseBtn = document.getElementById('modalCloseBtn');
       const modalImg = document.getElementById('modalImg');
@@ -1782,211 +1658,222 @@
         }
       });
 
-      // --- Step 4: Screenshot Generation for 25-ID Batches ---
+      // --- Step 4: Fast batch rendering with native Canvas 2D (no html2canvas) ---
       generateBatchesBtn.addEventListener('click', generateAllBatches);
 
-      async function generateAllBatches() {
-        const chunkSize = parseInt(batchSizeInput.value, 10) || 25;
-        const currentDateStr = getFormattedDate();
+      const CARD = { W: 860, PAD: 32, TH: 40, ROW: 36, SNO_W: 75, SCALE: 2 };
+      const SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+      const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+      const PARALLEL = 8; // cards encoded concurrently
 
-        // Group allocated rows by trainer
-        const trainerGroups = new Map();
-        state.allocatedRows.forEach(row => {
-          if (!row.trainer) return; // Skip unassigned rows for screenshot creation
-          if (!trainerGroups.has(row.trainer)) {
-            trainerGroups.set(row.trainer, []);
+      function fitText(ctx, text, maxW) {
+        if (ctx.measureText(text).width <= maxW) return text;
+        let t = text;
+        while (t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1);
+        return t + '…';
+      }
+
+      function drawBatchCanvas({ trainerName, dateStr, partNum, totalParts, rows, startSno, total }) {
+        const { W, PAD, TH, ROW, SNO_W, SCALE } = CARD;
+        const headBottom = PAD + 70;
+        const tableTop = headBottom + 18;
+        const tableEnd = tableTop + TH + rows.length * ROW;
+        const footTop = tableEnd + 18;
+        const H = footTop + 26 + PAD - 4;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = W * SCALE;
+        canvas.height = H * SCALE;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(SCALE, SCALE);
+
+        const hline = (y, color, w) => {
+          ctx.fillStyle = color;
+          ctx.fillRect(PAD, y, W - PAD * 2, w);
+        };
+
+        // Background + border
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(1, 1, W - 2, H - 2);
+
+        // Header: badge (right)
+        ctx.textBaseline = 'middle';
+        ctx.font = `700 13px ${SANS}`;
+        const badge = `Batch ${partNum} of ${totalParts}`;
+        const bw = ctx.measureText(badge).width + 24;
+        const bx = W - PAD - bw;
+        ctx.fillStyle = '#4f46e5';
+        ctx.beginPath();
+        ctx.arc(bx + 13, PAD + 13, 13, Math.PI / 2, Math.PI * 1.5);
+        ctx.arc(bx + bw - 13, PAD + 13, 13, Math.PI * 1.5, Math.PI / 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.fillText(badge, bx + bw / 2, PAD + 13);
+
+        ctx.font = `600 12px ${SANS}`;
+        ctx.fillStyle = '#64748b';
+        ctx.textAlign = 'right';
+        ctx.fillText(`Date: ${dateStr}`, W - PAD, PAD + 46);
+
+        // Header: title + subtitle (left)
+        ctx.textAlign = 'left';
+        ctx.font = `800 24px ${SANS}`;
+        ctx.fillStyle = '#1e1b4b';
+        ctx.fillText(fitText(ctx, trainerName, W - PAD * 2 - bw - 30), PAD, PAD + 14);
+        ctx.font = `500 13px ${SANS}`;
+        ctx.fillStyle = '#475569';
+        ctx.fillText(`ID & Password Assignment • Total ${total} Credentials`, PAD, PAD + 46);
+
+        hline(headBottom, '#e2e8f0', 2);
+
+        // Table header
+        const colW = (W - PAD * 2 - SNO_W) / 2;
+        const xSno = PAD + SNO_W / 2;
+        const xId = PAD + SNO_W + 14;
+        const xPass = PAD + SNO_W + colW + 14;
+
+        ctx.fillStyle = '#f1f5f9';
+        ctx.fillRect(PAD, tableTop, W - PAD * 2, TH);
+        hline(tableTop, '#cbd5e1', 1);
+        hline(tableTop + TH - 2, '#94a3b8', 2);
+        ctx.font = `700 13.5px ${SANS}`;
+        ctx.fillStyle = '#1e293b';
+        ctx.textAlign = 'center';
+        ctx.fillText('S.No', xSno, tableTop + TH / 2);
+        ctx.textAlign = 'left';
+        ctx.fillText('ID / Username', xId, tableTop + TH / 2);
+        ctx.fillText('Password', xPass, tableTop + TH / 2);
+
+        // Table rows
+        const cellMax = colW - 24;
+        for (let i = 0; i < rows.length; i++) {
+          const y = tableTop + TH + i * ROW;
+          if (i % 2 === 1) {
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(PAD, y, W - PAD * 2, ROW);
           }
-          trainerGroups.get(row.trainer).push(row);
-        });
+          hline(y + ROW - 1, '#e2e8f0', 1);
+          const cy = y + ROW / 2;
 
-        if (trainerGroups.size === 0) {
+          ctx.fillStyle = '#0f172a';
+          ctx.font = `400 13.5px ${SANS}`;
+          ctx.textAlign = 'center';
+          ctx.fillText(String(startSno + i), xSno, cy);
+
+          ctx.font = `600 13.5px ${MONO}`;
+          ctx.textAlign = 'left';
+          ctx.fillText(fitText(ctx, rows[i].id, cellMax), xId, cy);
+          ctx.fillText(fitText(ctx, rows[i].password, cellMax), xPass, cy);
+        }
+
+        // Footer
+        hline(footTop, '#e2e8f0', 1);
+        ctx.font = `400 11.5px ${SANS}`;
+        ctx.fillStyle = '#64748b';
+        ctx.fillText(`Showing records ${startSno} – ${startSno + rows.length - 1} of ${total}`, PAD, footTop + 22);
+        ctx.textAlign = 'right';
+        ctx.fillText('Confidential • ID Screenshots Portal', W - PAD, footTop + 22);
+
+        return canvas;
+      }
+
+      const canvasToBlob = (canvas) => new Promise((resolve, reject) => {
+        canvas.toBlob(b => (b ? resolve(b) : reject(new Error('PNG encoding failed'))), 'image/png');
+      });
+
+      function revokePreviewUrls() {
+        state.trainerBatches.forEach(list => list.forEach(item => item.url && URL.revokeObjectURL(item.url)));
+        state.trainerBatches.clear();
+      }
+
+      function setProgress(done, total, label) {
+        const pct = total ? Math.round((done / total) * 100) : 100;
+        progressStatusLabel.textContent = label;
+        progressPercentLabel.textContent = `${pct}%`;
+        progressBarFill.style.width = `${pct}%`;
+      }
+
+      async function generateAllBatches() {
+        hideError();
+        const chunkSize = Math.max(1, parseInt(batchSizeInput.value, 10) || 25);
+        const dateStr = getFormattedDate();
+
+        // Group assigned rows by trainer (overflow / blank rows are excluded)
+        const groups = new Map();
+        for (const r of state.allocatedRows) {
+          if (!r.trainer) continue;
+          if (!groups.has(r.trainer)) groups.set(r.trainer, []);
+          groups.get(r.trainer).push(r);
+        }
+        if (groups.size === 0) {
           showError('No trainers with assigned IDs to generate screenshots.');
           return;
         }
 
-        // Count total batch cards across all trainers
-        let totalCards = 0;
-        trainerGroups.forEach(rows => {
-          totalCards += Math.ceil(rows.length / chunkSize);
-        });
-
-        generationProgress.style.display = 'block';
-        previewsSection.style.display = 'none';
+        revokePreviewUrls();
         generateBatchesBtn.disabled = true;
         downloadMasterZipBtn.disabled = true;
+        previewsSection.style.display = 'none';
+        generationProgress.style.display = 'block';
 
-        state.trainerBatches.clear();
-        let renderedCards = 0;
-
-        for (const [trainerName, rows] of trainerGroups.entries()) {
+        // Build a flat job list
+        const jobs = [];
+        for (const [name, rows] of groups) {
           const totalParts = Math.ceil(rows.length / chunkSize);
-          const batches = [];
-          const safeName = sanitizeFilename(trainerName);
-
+          const safe = sanitizeFilename(name);
+          const list = [];
+          state.trainerBatches.set(name, list);
           for (let p = 0; p < totalParts; p++) {
-            const partNum = p + 1;
-            const startIdx = p * chunkSize;
-            const endIdx = Math.min(startIdx + chunkSize, rows.length);
-            const chunkRows = rows.slice(startIdx, endIdx);
-
-            renderedCards++;
-            const pct = Math.round((renderedCards / totalCards) * 100);
-            progressStatusLabel.textContent = `Rendering ${trainerName} (Batch ${partNum} of ${totalParts})...`;
-            progressPercentLabel.textContent = `${pct}%`;
-            progressBarFill.style.width = `${pct}%`;
-
-            // Yield to browser UI
-            await new Promise(r => setTimeout(r, 20));
-
-            const cardEl = createRenderCardElement({
-              trainerName: trainerName,
-              dateStr: currentDateStr,
-              partNum: partNum,
-              totalParts: totalParts,
-              rows: chunkRows,
-              startSno: startIdx + 1,
-              totalTrainerRows: rows.length
-            });
-
-            renderStage.innerHTML = '';
-            renderStage.appendChild(cardEl);
-
-            try {
-              const canvas = await html2canvas(cardEl, {
-                scale: 2,
-                useCORS: true,
-                allowTaint: true,
-                backgroundColor: '#ffffff',
-                logging: false
-              });
-
-              const dataUrl = canvas.toDataURL('image/png');
-              const filename = `${safeName}_${currentDateStr}_${partNum}.png`;
-
-              batches.push({
-                trainerName: trainerName,
-                part: partNum,
-                totalParts: totalParts,
-                startSno: startIdx + 1,
-                endSno: endIdx,
-                dataUrl: dataUrl,
-                filename: filename
-              });
-            } catch (err) {
-              console.error(`Error rendering batch card for ${trainerName}:`, err);
-            }
+            const start = p * chunkSize;
+            const chunk = rows.slice(start, start + chunkSize);
+            const item = {
+              trainerName: name, part: p + 1, totalParts,
+              startSno: start + 1, endSno: start + chunk.length,
+              filename: `${safe}_${dateStr}_${p + 1}.png`,
+              blob: null, url: ''
+            };
+            list.push(item);
+            jobs.push({ item, chunk, total: rows.length });
           }
-
-          state.trainerBatches.set(trainerName, batches);
         }
 
-        renderStage.innerHTML = '';
+        const t0 = performance.now();
+        let done = 0;
+        setProgress(0, jobs.length, `Rendering ${jobs.length} images...`);
 
-        progressStatusLabel.textContent = `Generated ${renderedCards} screenshot batches across ${trainerGroups.size} trainers!`;
-        progressPercentLabel.textContent = '100%';
-        progressBarFill.style.width = '100%';
+        try {
+          for (let i = 0; i < jobs.length; i += PARALLEL) {
+            await Promise.all(jobs.slice(i, i + PARALLEL).map(async ({ item, chunk, total }) => {
+              const canvas = drawBatchCanvas({
+                trainerName: item.trainerName, dateStr,
+                partNum: item.part, totalParts: item.totalParts,
+                rows: chunk, startSno: item.startSno, total
+              });
+              item.blob = await canvasToBlob(canvas);
+              item.url = URL.createObjectURL(item.blob);
+              canvas.width = canvas.height = 0; // free memory early
+              done++;
+            }));
+            setProgress(done, jobs.length, `Rendering images... ${done} / ${jobs.length}`);
+          }
+        } catch (err) {
+          console.error('Render error:', err);
+          showError('Failed to generate images: ' + err.message);
+        }
 
-        setTimeout(() => {
-          generationProgress.style.display = 'none';
-        }, 500);
+        const secs = ((performance.now() - t0) / 1000).toFixed(1);
+        setProgress(done, jobs.length, `Generated ${done} images for ${groups.size} trainers in ${secs}s`);
 
         generateBatchesBtn.disabled = false;
         downloadMasterZipBtn.disabled = false;
         previewsSection.style.display = 'block';
-
+        state.currentPreviewFilter = 'ALL';
         renderPreviewsFilter();
         renderPreviewsGrid();
-      }
-
-      function createRenderCardElement({ trainerName, dateStr, partNum, totalParts, rows, startSno, totalTrainerRows }) {
-        const card = document.createElement('div');
-        card.className = 'render-card';
-
-        // Header
-        const header = document.createElement('div');
-        header.className = 'rc-header';
-
-        const titleBlock = document.createElement('div');
-        titleBlock.className = 'rc-title-block';
-
-        const title = document.createElement('h2');
-        title.textContent = trainerName;
-
-        const subtitle = document.createElement('div');
-        subtitle.className = 'rc-subtitle';
-        subtitle.textContent = `ID & Password Assignment • Total ${totalTrainerRows} Credentials`;
-
-        titleBlock.appendChild(title);
-        titleBlock.appendChild(subtitle);
-
-        const badgeGroup = document.createElement('div');
-        badgeGroup.className = 'rc-badge-group';
-
-        const partBadge = document.createElement('div');
-        partBadge.className = 'rc-part-badge';
-        partBadge.textContent = `Batch ${partNum} of ${totalParts}`;
-
-        const dateBadge = document.createElement('div');
-        dateBadge.className = 'rc-date-badge';
-        dateBadge.textContent = `Date: ${dateStr}`;
-
-        badgeGroup.appendChild(partBadge);
-        badgeGroup.appendChild(dateBadge);
-
-        header.appendChild(titleBlock);
-        header.appendChild(badgeGroup);
-        card.appendChild(header);
-
-        // Table
-        const table = document.createElement('table');
-        table.className = 'rc-table';
-
-        const thead = document.createElement('thead');
-        thead.innerHTML = `
-          <tr>
-            <th class="rc-sno-col">S.No</th>
-            <th>ID / Username</th>
-            <th>Password</th>
-          </tr>
-        `;
-        table.appendChild(thead);
-
-        const tbody = document.createElement('tbody');
-        rows.forEach((row, i) => {
-          const tr = document.createElement('tr');
-          const currentSno = startSno + i;
-
-          const tdSno = document.createElement('td');
-          tdSno.className = 'rc-sno-col';
-          tdSno.textContent = currentSno;
-
-          const tdId = document.createElement('td');
-          tdId.className = 'rc-mono';
-          tdId.textContent = row.id;
-
-          const tdPass = document.createElement('td');
-          tdPass.className = 'rc-mono';
-          tdPass.textContent = row.password;
-
-          tr.appendChild(tdSno);
-          tr.appendChild(tdId);
-          tr.appendChild(tdPass);
-          tbody.appendChild(tr);
-        });
-
-        table.appendChild(tbody);
-        card.appendChild(table);
-
-        // Footer
-        const footer = document.createElement('div');
-        footer.className = 'rc-footer';
-        footer.innerHTML = `
-          <span>Showing records ${startSno} – ${startSno + rows.length - 1} of ${totalTrainerRows}</span>
-          <span>Confidential • ID Screenshots Portal</span>
-        `;
-        card.appendChild(footer);
-
-        return card;
       }
 
       function renderPreviewsFilter() {
@@ -2037,12 +1924,14 @@
           thumbWrap.title = 'Click to inspect full size';
 
           const img = document.createElement('img');
-          img.src = item.dataUrl;
+          img.src = item.url;
+          img.loading = 'lazy';
+          img.decoding = 'async';
           img.alt = item.filename;
           thumbWrap.appendChild(img);
 
           thumbWrap.addEventListener('click', () => {
-            openImageModal(item.filename, item.dataUrl);
+            openImageModal(item.filename, item.url);
           });
 
           const info = document.createElement('div');
@@ -2066,7 +1955,7 @@
           `;
           dlBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            downloadSingleImage(item.dataUrl, item.filename);
+            downloadSingleImage(item.url, item.filename);
           });
 
           info.appendChild(title);
@@ -2079,9 +1968,9 @@
         });
       }
 
-      function downloadSingleImage(dataUrl, filename) {
+      function downloadSingleImage(url, filename) {
         const link = document.createElement('a');
-        link.href = dataUrl;
+        link.href = url;
         link.download = filename;
         document.body.appendChild(link);
         link.click();
@@ -2121,12 +2010,11 @@
             const trainerFolder = zip.folder(folderName);
 
             batches.forEach(batchItem => {
-              const base64Data = batchItem.dataUrl.replace(/^data:image\/png;base64,/, '');
-              trainerFolder.file(batchItem.filename, base64Data, { base64: true });
+              trainerFolder.file(batchItem.filename, batchItem.blob);
             });
           }
 
-          const content = await zip.generateAsync({ type: 'blob' });
+          const content = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
           const url = URL.createObjectURL(content);
 
           const link = document.createElement('a');
@@ -2280,7 +2168,7 @@
         state.trainers = [];
         state.ids = [];
         state.allocatedRows = [];
-        state.trainerBatches.clear();
+        revokePreviewUrls();
         state.trainersFileName = '';
         state.idsFileName = '';
 
