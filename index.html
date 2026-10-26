@@ -1083,9 +1083,9 @@
           <thead>
             <tr>
               <th class="col-sno">S.No</th>
-              <th>Col 1: ID</th>
-              <th>Col 2: Password</th>
-              <th>Col 3: Trainer Name</th>
+              <th>id</th>
+              <th>Password</th>
+              <th>Trainer Name</th>
             </tr>
           </thead>
           <tbody id="allocatedTableBody">
@@ -1609,25 +1609,33 @@
         allocatedTableBody.appendChild(frag);
       }
 
-      // Generate the Excel Workbook buffer with Column 1: ID, Column 2: Password, Column 3: Trainer Name
+      // Generate the Excel Workbook buffer with 4 columns: S.No, id, Password, Trainer Name
       function createDistributionExcelBuffer() {
         const wsData = [
-          ['ID', 'Password', 'Trainer Name']
+          ['S.No', 'id', 'Password', 'Trainer Name']
         ];
 
-        state.allocatedRows.forEach(r => {
-          wsData.push([r.id, r.password, r.trainer || '']);
+        state.allocatedRows.forEach((r, idx) => {
+          wsData.push([idx + 1, r.id, r.password, r.trainer || '']);
         });
 
         const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-        // Mark Column A & B as text so leading zeros are preserved when opened in Excel
+        // Mark Column B (id, index 1) & Column C (Password, index 2) as text so leading zeros are preserved when opened in Excel
         for (let R = 1; R < wsData.length; ++R) {
-          const cellA = XLSX.utils.encode_cell({ c: 0, r: R });
-          const cellB = XLSX.utils.encode_cell({ c: 1, r: R });
-          if (ws[cellA]) { ws[cellA].t = 's'; ws[cellA].z = '@'; }
-          if (ws[cellB]) { ws[cellB].t = 's'; ws[cellB].z = '@'; }
+          const cellId = XLSX.utils.encode_cell({ c: 1, r: R });
+          const cellPass = XLSX.utils.encode_cell({ c: 2, r: R });
+          if (ws[cellId]) { ws[cellId].t = 's'; ws[cellId].z = '@'; }
+          if (ws[cellPass]) { ws[cellPass].t = 's'; ws[cellPass].z = '@'; }
         }
+
+        // Set column widths for clean readability in Excel / Numbers
+        ws['!cols'] = [
+          { wch: 8 },  // S.No
+          { wch: 18 }, // id
+          { wch: 18 }, // Password
+          { wch: 24 }  // Trainer Name
+        ];
 
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Allocated IDs');
